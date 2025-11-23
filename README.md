@@ -2,6 +2,12 @@
 
 This codebase tries to experiment with SSM layers for recursive reasoning on tasks like ARC-AGI. Note that we don't experiment with the ARC task but instead use Sudoku-Extreme due to computational constraints.
 
+## Disclaimers
+
+- For ease of implementation, we do not used optimised cuda kernels for the SSM that one might find in the `mamba-ssm` package. SSM implementation focuses of minimalism, the ability to test and iterate fast, and readability.
+
+- We use `torch.optim.AdamW` to train the model instead of `AdamATan2` due to installation difficulties.
+
 ### How TRM works
 
 <p align="center">

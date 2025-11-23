@@ -17,7 +17,7 @@ import coolname
 import hydra
 import pydantic
 from omegaconf import DictConfig
-from adam_atan2 import AdamATan2
+# from adam_atan2 import AdamATan2
 
 from puzzle_dataset import PuzzleDataset, PuzzleDatasetConfig, PuzzleDatasetMetadata
 from utils.functions import load_model_class, get_model_source_path
@@ -147,7 +147,7 @@ def create_model(config: PretrainConfig, train_metadata: PuzzleDatasetMetadata, 
     # Optimizers and lr
     if config.arch.puzzle_emb_ndim == 0:
         optimizers = [
-            AdamATan2(
+            torch.optim.AdamW(
                 model.parameters(),
                 lr=0,  # Needs to be set by scheduler
                 weight_decay=config.weight_decay,
@@ -177,7 +177,7 @@ def create_model(config: PretrainConfig, train_metadata: PuzzleDatasetMetadata, 
                 weight_decay=config.puzzle_emb_weight_decay,
                 world_size=world_size
             ),
-            AdamATan2(
+            torch.optim.AdamW(
                 model.parameters(),
                 lr=0,  # Needs to be set by scheduler
                 weight_decay=config.weight_decay,
@@ -309,15 +309,15 @@ def train_batch(config: PretrainConfig, train_state: TrainState, batch: Any, glo
         for param in train_state.model.parameters():
             if param.grad is not None:
                 dist.all_reduce(param.grad)
-            
+
     # Apply optimizer
-    lr_this_step = None    
+    lr_this_step = None
     for optim, base_lr in zip(train_state.optimizers, train_state.optimizer_lrs):
         lr_this_step = compute_lr(base_lr, config, train_state)
 
         for param_group in optim.param_groups:
             param_group['lr'] = lr_this_step
-            
+
         optim.step()
         optim.zero_grad()
 
@@ -334,7 +334,7 @@ def train_batch(config: PretrainConfig, train_state: TrainState, batch: Any, glo
         if rank == 0:
             metric_values = metric_values.cpu().numpy()
             reduced_metrics = {k: metric_values[i] for i, k in enumerate(metric_keys)}
-            
+
             # Postprocess
             count = max(reduced_metrics["count"], 1)  # Avoid NaNs
             reduced_metrics = {f"train/{k}": v / (global_batch_size if k.endswith("loss") else count) for k, v in reduced_metrics.items()}
@@ -370,12 +370,12 @@ def evaluate(
 
         carry = None
         processed_batches = 0
-        
+
         for set_name, batch, global_batch_size in eval_loader:
             processed_batches += 1
             if rank == 0:
                 print(f"Processing batch {processed_batches}: {set_name}")
-            
+
             # To device
             batch = {k: v.cuda() for k, v in batch.items()}
             with torch.device("cuda"):
@@ -457,11 +457,11 @@ def evaluate(
         # Run evaluators
         if rank == 0:
             print(f"\nRunning {len(evaluators)} evaluator(s)...")
-            
+
         for i, evaluator in enumerate(evaluators):
             if rank == 0:
                 print(f"Running evaluator {i+1}/{len(evaluators)}: {evaluator.__class__.__name__}")
-                
+
             # Path for saving
             evaluator_save_path = None
             if config.checkpoint_path is not None:
@@ -479,7 +479,7 @@ def evaluate(
 
                 reduced_metrics.update(metrics)
                 print(f"  Completed {evaluator.__class__.__name__}")
-                
+
         if rank == 0:
             print("All evaluators completed!")
 
@@ -547,7 +547,7 @@ def launch(hydra_config: DictConfig):
         WORLD_SIZE = dist.get_world_size()
 
         torch.cuda.set_device(int(os.environ["LOCAL_RANK"]))
-        
+
         # CPU GLOO process group
         CPU_PROCESS_GROUP = dist.new_group(backend="gloo")
         assert (
@@ -623,18 +623,18 @@ def launch(hydra_config: DictConfig):
             else:
                 train_state_eval = train_state
             train_state_eval.model.eval()
-            metrics = evaluate(config, 
-                train_state_eval, 
-                eval_loader, 
-                eval_metadata, 
+            metrics = evaluate(config,
+                train_state_eval,
+                eval_loader,
+                eval_metadata,
                 evaluators,
-                rank=RANK, 
+                rank=RANK,
                 world_size=WORLD_SIZE,
                 cpu_group=CPU_PROCESS_GROUP)
 
             if RANK == 0 and metrics is not None:
                 wandb.log(metrics, step=train_state.step)
-                
+
             ############ Checkpointing
             if RANK == 0:
                 print("SAVE CHECKPOINT")
